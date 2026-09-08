@@ -22,6 +22,7 @@ import DoctorAvailability from "../pages/DoctorAvailability"
  
 import PatientDoctors from "../pages/PatientDoctors";
 import DoctorDetails from "../pages/DoctorDetails";
+import Consultation from "../pages/Consultation";
 
 
 
@@ -158,6 +159,17 @@ export default function AppRoutes() {
         <Route
           path="/appointments"
           element={<DoctorAppointments />}
+        />
+
+        <Route
+          path="/consultation/:roomCode"
+          element={
+            <ProtectedRoute
+              allowedRoles={["doctor", "patient", "admin"]}
+            >
+              <Consultation />
+            </ProtectedRoute>
+          }
         />
 
 

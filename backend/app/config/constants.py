@@ -52,6 +52,13 @@ class ConsultationStatus(str, Enum):
     ENDED = "ended"
 
 
+class RecordingStatus(str, Enum):
+    RECORDING = "recording"
+    UPLOADING = "uploading"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class PaymentStatus(str, Enum):
     CREATED = "created"
     PENDING = "pending"
@@ -86,6 +93,7 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
         "payment.create",
         "consultation.read",
         "consultation.join",
+        "consultation.recording.read",
     ],
     Role.DOCTOR: [
         "doctor.read",
@@ -101,6 +109,8 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
         "availability.delete",
         "consultation.read",
         "consultation.join",
+        "consultation.record",
+        "consultation.recording.read",
     ],
     Role.PATIENT: [
         "patient.read",

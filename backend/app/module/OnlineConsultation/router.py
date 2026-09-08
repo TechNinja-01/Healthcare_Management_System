@@ -6,16 +6,19 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     WebSocket,
     WebSocketDisconnect,
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import storage
 from app.config.constants import (
     AppointmentStatus,
     AppointmentType,
     ConsultationStatus,
+    RecordingStatus,
     Role,
 )
 from app.config.database import SessionLocal, get_db
@@ -26,7 +29,12 @@ from app.config.settings import settings
 from app.module.appointment.model import Appointment
 from app.module.auth.model import User
 from app.module.OnlineConsultation.connection import room_manager
-from app.module.OnlineConsultation.model import ChatMessage, ConsultationRoom
+from app.module.OnlineConsultation.model import (
+    ChatMessage,
+    ConsultationRoom,
+    Recording,
+)
+from app.module.OnlineConsultation.schema import CompleteRecordingRequest
 
 
 router = APIRouter(
@@ -360,6 +368,310 @@ def get_messages(
     return ApiResponse.success(
         message="Chat history fetched successfully",
         data=data,
+    )
+
+
+# ============================================================
+# RECORDINGS (MinIO via presigned multipart upload)
+# ============================================================
+
+def _serialize_recording(recording: Recording) -> dict:
+    status_value = (
+        recording.status.value
+        if hasattr(recording.status, "value")
+        else recording.status
+    )
+    return {
+        "id": recording.id,
+        "room_id": recording.room_id,
+        "status": status_value,
+        "size_bytes": recording.size_bytes,
+        "duration_seconds": recording.duration_seconds,
+        "created_at": (
+            recording.created_at.isoformat()
+            if recording.created_at
+            else None
+        ),
+    }
+
+
+def _get_room_or_error(db: Session, room_code: str, current_user: dict):
+    room = _load_room(db, room_code)
+    if not room:
+        return None, ApiResponse.error(
+            message="Consultation room not found",
+            status_code=404,
+        )
+    _verify_participant(room.appointment, current_user)
+    return room, None
+
+
+@router.post("/{room_code}/recordings/initiate")
+def initiate_recording(
+    room_code: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(has_permission("consultation.record")),
+):
+    room, error = _get_room_or_error(db, room_code, current_user)
+    if error:
+        return error
+
+    object_key = f"recordings/{room.room_code}/{uuid.uuid4().hex}.webm"
+
+    try:
+        upload_id = storage.create_multipart_upload(object_key)
+    except storage.StorageNotConfigured:
+        return ApiResponse.error(
+            message="Recording storage is not configured on the server",
+            status_code=503,
+        )
+    except Exception:
+        return ApiResponse.error(
+            message="Unable to start recording upload",
+            status_code=502,
+        )
+
+    recording = Recording(
+        room_id=room.id,
+        bucket=settings.MINIO_BUCKET,
+        object_key=object_key,
+        upload_id=upload_id,
+        uploaded_by_user_id=current_user.get("id"),
+        status=RecordingStatus.UPLOADING,
+    )
+    db.add(recording)
+    db.commit()
+    db.refresh(recording)
+
+    return ApiResponse.success(
+        message="Recording upload initiated",
+        status_code=201,
+        data={
+            "recording_id": recording.id,
+            "object_key": object_key,
+            "upload_id": upload_id,
+        },
+    )
+
+
+@router.post("/{room_code}/recordings/{recording_id}/part-url")
+def get_recording_part_url(
+    room_code: str,
+    recording_id: int,
+    part_number: int = Query(..., ge=1, le=10000),
+    db: Session = Depends(get_db),
+    current_user=Depends(has_permission("consultation.record")),
+):
+    room, error = _get_room_or_error(db, room_code, current_user)
+    if error:
+        return error
+
+    recording = (
+        db.query(Recording)
+        .filter(
+            Recording.id == recording_id,
+            Recording.room_id == room.id,
+        )
+        .first()
+    )
+    if not recording or not recording.upload_id:
+        return ApiResponse.error(
+            message="Recording upload not found",
+            status_code=404,
+        )
+
+    try:
+        url = storage.presign_upload_part(
+            recording.object_key,
+            recording.upload_id,
+            part_number,
+        )
+    except Exception:
+        return ApiResponse.error(
+            message="Unable to generate upload URL",
+            status_code=502,
+        )
+
+    return ApiResponse.success(
+        message="Upload URL generated",
+        data={"part_number": part_number, "url": url},
+    )
+
+
+@router.post("/{room_code}/recordings/{recording_id}/complete")
+def complete_recording(
+    room_code: str,
+    recording_id: int,
+    payload: CompleteRecordingRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(has_permission("consultation.record")),
+):
+    room, error = _get_room_or_error(db, room_code, current_user)
+    if error:
+        return error
+
+    recording = (
+        db.query(Recording)
+        .filter(
+            Recording.id == recording_id,
+            Recording.room_id == room.id,
+        )
+        .first()
+    )
+    if not recording or not recording.upload_id:
+        return ApiResponse.error(
+            message="Recording upload not found",
+            status_code=404,
+        )
+
+    parts = [
+        {"PartNumber": p.part_number, "ETag": p.etag}
+        for p in payload.parts
+    ]
+    if not parts:
+        return ApiResponse.error(
+            message="No uploaded parts provided",
+            status_code=400,
+        )
+
+    try:
+        storage.complete_multipart_upload(
+            recording.object_key,
+            recording.upload_id,
+            parts,
+        )
+    except Exception:
+        recording.status = RecordingStatus.FAILED
+        db.commit()
+        return ApiResponse.error(
+            message="Unable to finalize recording upload",
+            status_code=502,
+        )
+
+    recording.status = RecordingStatus.COMPLETED
+    recording.upload_id = None
+    recording.duration_seconds = payload.duration_seconds
+    recording.size_bytes = payload.size_bytes
+    db.commit()
+    db.refresh(recording)
+
+    return ApiResponse.success(
+        message="Recording saved successfully",
+        data=_serialize_recording(recording),
+    )
+
+
+@router.post("/{room_code}/recordings/{recording_id}/abort")
+def abort_recording(
+    room_code: str,
+    recording_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(has_permission("consultation.record")),
+):
+    room, error = _get_room_or_error(db, room_code, current_user)
+    if error:
+        return error
+
+    recording = (
+        db.query(Recording)
+        .filter(
+            Recording.id == recording_id,
+            Recording.room_id == room.id,
+        )
+        .first()
+    )
+    if not recording:
+        return ApiResponse.error(
+            message="Recording not found",
+            status_code=404,
+        )
+
+    if recording.upload_id:
+        storage.abort_multipart_upload(
+            recording.object_key,
+            recording.upload_id,
+        )
+
+    recording.status = RecordingStatus.FAILED
+    recording.upload_id = None
+    db.commit()
+
+    return ApiResponse.success(message="Recording upload aborted")
+
+
+@router.get("/{room_code}/recordings")
+def list_recordings(
+    room_code: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(has_permission("consultation.recording.read")),
+):
+    room, error = _get_room_or_error(db, room_code, current_user)
+    if error:
+        return error
+
+    recordings = (
+        db.query(Recording)
+        .filter(
+            Recording.room_id == room.id,
+            Recording.status == RecordingStatus.COMPLETED,
+        )
+        .order_by(Recording.created_at.desc())
+        .all()
+    )
+
+    return ApiResponse.success(
+        message="Recordings fetched successfully",
+        data=[_serialize_recording(r) for r in recordings],
+    )
+
+
+@router.get("/recordings/{recording_id}/download")
+def download_recording(
+    recording_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(has_permission("consultation.recording.read")),
+):
+    recording = (
+        db.query(Recording)
+        .filter(Recording.id == recording_id)
+        .first()
+    )
+    if not recording or recording.status != RecordingStatus.COMPLETED:
+        return ApiResponse.error(
+            message="Recording not found",
+            status_code=404,
+        )
+
+    room = (
+        db.query(ConsultationRoom)
+        .options(
+            joinedload(ConsultationRoom.appointment)
+            .joinedload(Appointment.patient),
+            joinedload(ConsultationRoom.appointment)
+            .joinedload(Appointment.doctor),
+        )
+        .filter(ConsultationRoom.id == recording.room_id)
+        .first()
+    )
+    if not room:
+        return ApiResponse.error(
+            message="Consultation room not found",
+            status_code=404,
+        )
+
+    _verify_participant(room.appointment, current_user)
+
+    try:
+        url = storage.presign_get(recording.object_key)
+    except Exception:
+        return ApiResponse.error(
+            message="Unable to generate download URL",
+            status_code=502,
+        )
+
+    return ApiResponse.success(
+        message="Download URL generated",
+        data={"url": url, "expires_in": settings.RECORDING_URL_TTL_SECONDS},
     )
 
 

@@ -37,6 +37,7 @@ export default function AppointmentModal({
     appointment_date: "",
     appointment_time: "",
     disease: "",
+    appointment_type: "in_person",
   });
 
   const [slots, setSlots] = useState([]);
@@ -55,6 +56,7 @@ export default function AppointmentModal({
         appointment_date: "",
         appointment_time: "",
         disease: "",
+        appointment_type: "in_person",
       });
 
       setSlots([]);
@@ -381,6 +383,9 @@ export default function AppointmentModal({
           // Send disease to backend
           disease:
             formData.disease.trim() || null,
+
+          appointment_type:
+            formData.appointment_type,
         });
 
       console.log(
@@ -528,6 +533,62 @@ export default function AppointmentModal({
               {success}
             </div>
           )}
+
+          {/* ================================================== */}
+          {/* CONSULTATION TYPE */}
+          {/* ================================================== */}
+
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Consultation Type
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                {
+                  value: "in_person",
+                  label: "In-person",
+                  hint: "Visit the clinic",
+                },
+                {
+                  value: "online",
+                  label: "Online",
+                  hint: "Video call",
+                },
+              ].map((option) => {
+                const isSelected =
+                  formData.appointment_type ===
+                  option.value;
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    disabled={loading}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        appointment_type:
+                          option.value,
+                      }))
+                    }
+                    className={`rounded-lg border px-4 py-3 text-left transition ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-50"
+                        : "border-gray-300 hover:border-blue-400"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold text-gray-800">
+                      {option.label}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {option.hint}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {/* ================================================== */}
           {/* DISEASE */}

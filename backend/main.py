@@ -15,6 +15,7 @@ from app.module.payment.model import Payment  # noqa: F401
 from app.module.OnlineConsultation.model import (  # noqa: F401
     ChatMessage,
     ConsultationRoom,
+    Recording,
 )
 
 app = FastAPI(

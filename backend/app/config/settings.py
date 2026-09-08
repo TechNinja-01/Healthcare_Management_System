@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     TURN_USERNAME: str | None = None
     TURN_CREDENTIAL: str | None = None
 
+    # MinIO / S3-compatible object storage for call recordings.
+    MINIO_ENDPOINT: str | None = None          # e.g. "localhost:9000"
+    MINIO_ACCESS_KEY: str | None = None
+    MINIO_SECRET_KEY: str | None = None
+    MINIO_BUCKET: str = "consultation-recordings"
+    MINIO_SECURE: bool = False                 # True if MinIO is behind https
+    RECORDING_URL_TTL_SECONDS: int = 3600
+
 
     model_config = SettingsConfigDict(
         env_file=".env",

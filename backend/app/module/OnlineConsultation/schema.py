@@ -40,3 +40,29 @@ class ChatMessageResponse(BaseModel):
 
 class IceServersResponse(BaseModel):
     ice_servers: List[dict]
+
+
+# ------------------------------------------------------------
+# Recording
+# ------------------------------------------------------------
+
+class RecordingPart(BaseModel):
+    part_number: int
+    etag: str
+
+
+class CompleteRecordingRequest(BaseModel):
+    parts: List[RecordingPart]
+    duration_seconds: Optional[int] = None
+    size_bytes: Optional[int] = None
+
+
+class RecordingResponse(BaseModel):
+    id: int
+    room_id: int
+    status: str
+    size_bytes: Optional[int] = None
+    duration_seconds: Optional[int] = None
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}

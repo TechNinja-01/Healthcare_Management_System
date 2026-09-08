@@ -16,7 +16,11 @@ from app.module.rolePermission.model import RolePermission
 from app.module.appointment.model import Appointment
 from app.module.payment.model import Payment
 from app.module.Availability.model import DoctorAvailability, DoctorLeave
-from app.module.OnlineConsultation.model import ChatMessage, ConsultationRoom
+from app.module.OnlineConsultation.model import (
+    ChatMessage,
+    ConsultationRoom,
+    Recording,
+)
 
 
 config = context.config

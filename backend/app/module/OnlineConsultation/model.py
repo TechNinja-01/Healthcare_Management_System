@@ -11,7 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from app.config.constants import ConsultationStatus
+from app.config.constants import ConsultationStatus, RecordingStatus
 from app.config.database import Base
 
 
@@ -75,6 +75,12 @@ class ConsultationRoom(Base):
         cascade="all, delete-orphan",
         order_by="ChatMessage.created_at",
     )
+    recordings = relationship(
+        "Recording",
+        back_populates="room",
+        cascade="all, delete-orphan",
+        order_by="Recording.created_at",
+    )
 
 
 class ChatMessage(Base):
@@ -109,4 +115,65 @@ class ChatMessage(Base):
     room = relationship(
         "ConsultationRoom",
         back_populates="messages",
+    )
+
+
+class Recording(Base):
+    """
+    A recording of a consultation, stored in MinIO/S3.
+
+    The browser uploads the composited .webm directly to object storage
+    via presigned multipart URLs; this row tracks the metadata + status.
+    """
+
+    __tablename__ = "consultation_recordings"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    room_id = Column(
+        Integer,
+        ForeignKey("consultation_rooms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Object storage location.
+    bucket = Column(String(100), nullable=False)
+    object_key = Column(String(255), nullable=False)
+
+    # In-progress S3 multipart upload id (cleared once completed).
+    upload_id = Column(String(255), nullable=True)
+
+    size_bytes = Column(Integer, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+
+    uploaded_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    status = Column(
+        Enum(
+            RecordingStatus,
+            name="recording_status",
+            values_callable=lambda enum: [item.value for item in enum],
+            native_enum=False,
+            length=20,
+        ),
+        nullable=False,
+        default=RecordingStatus.RECORDING,
+        server_default=RecordingStatus.RECORDING.value,
+    )
+
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+    )
+
+    room = relationship(
+        "ConsultationRoom",
+        back_populates="recordings",
     )

@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
 import { getAppointments } from "../api/appointmentApi";
+import { createOrGetRoom } from "../api/consultationApi";
+import { getApiData, getErrorMessage } from "../utils/apiHelpers";
 
 export default function DoctorAppointments() {
+    const navigate = useNavigate();
+
     const [appointments, setAppointments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [joiningId, setJoiningId] = useState(null);
 
     const fetchAppointments = async () => {
         try {
@@ -39,6 +46,37 @@ export default function DoctorAppointments() {
     useEffect(() => {
         fetchAppointments();
     }, []);
+
+    // Join an online consultation: create/fetch the room, then navigate.
+    const handleJoinCall = async (appointment) => {
+        try {
+            setJoiningId(appointment.id);
+            setError("");
+
+            const response = await createOrGetRoom(appointment.id);
+            const room = getApiData(response);
+
+            if (!room?.room_code) {
+                throw new Error("Consultation room is not available yet.");
+            }
+
+            navigate(`/consultation/${room.room_code}`);
+        } catch (err) {
+            setError(
+                getErrorMessage(
+                    err,
+                    "Unable to join the consultation."
+                )
+            );
+        } finally {
+            setJoiningId(null);
+        }
+    };
+
+    // Whether a "Join Call" action should be shown for this appointment.
+    const canJoinCall = (appointment) =>
+        appointment.appointment_type === "online" &&
+        appointment.status === "confirmed";
 
     // Format date
     const formatDate = (dateString) => {
@@ -182,6 +220,14 @@ export default function DoctorAppointments() {
                                         Status
                                     </th>
 
+                                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
+                                        Type
+                                    </th>
+
+                                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
+                                        Action
+                                    </th>
+
                                 </tr>
                             </thead>
 
@@ -246,6 +292,52 @@ export default function DoctorAppointments() {
                                                         "confirmed"}
                                                 </span>
 
+                                            </td>
+
+                                            {/* Type */}
+                                            <td className="px-6 py-4">
+                                                <span
+                                                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                                        appointment.appointment_type ===
+                                                        "online"
+                                                            ? "bg-purple-100 text-purple-700"
+                                                            : "bg-gray-100 text-gray-600"
+                                                    }`}
+                                                >
+                                                    {appointment.appointment_type ===
+                                                    "online"
+                                                        ? "Online"
+                                                        : "In-person"}
+                                                </span>
+                                            </td>
+
+                                            {/* Action */}
+                                            <td className="px-6 py-4">
+                                                {canJoinCall(
+                                                    appointment
+                                                ) ? (
+                                                    <button
+                                                        onClick={() =>
+                                                            handleJoinCall(
+                                                                appointment
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            joiningId ===
+                                                            appointment.id
+                                                        }
+                                                        className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                                                    >
+                                                        {joiningId ===
+                                                        appointment.id
+                                                            ? "Joining…"
+                                                            : "Join Call"}
+                                                    </button>
+                                                ) : (
+                                                    <span className="text-sm text-gray-400">
+                                                        —
+                                                    </span>
+                                                )}
                                             </td>
 
                                         </tr>
@@ -347,6 +439,45 @@ export default function DoctorAppointments() {
 
                                         </div>
 
+                                    </div>
+
+                                    {/* Type + Join */}
+                                    <div className="mt-4 flex items-center justify-between">
+                                        <span
+                                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                                appointment.appointment_type ===
+                                                "online"
+                                                    ? "bg-purple-100 text-purple-700"
+                                                    : "bg-gray-100 text-gray-600"
+                                            }`}
+                                        >
+                                            {appointment.appointment_type ===
+                                            "online"
+                                                ? "Online"
+                                                : "In-person"}
+                                        </span>
+
+                                        {canJoinCall(
+                                            appointment
+                                        ) && (
+                                            <button
+                                                onClick={() =>
+                                                    handleJoinCall(
+                                                        appointment
+                                                    )
+                                                }
+                                                disabled={
+                                                    joiningId ===
+                                                    appointment.id
+                                                }
+                                                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                                            >
+                                                {joiningId ===
+                                                appointment.id
+                                                    ? "Joining…"
+                                                    : "Join Call"}
+                                            </button>
+                                        )}
                                     </div>
 
                                 </div>
