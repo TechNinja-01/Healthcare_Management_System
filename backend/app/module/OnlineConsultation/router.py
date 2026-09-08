@@ -1,6 +1,14 @@
+import json
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -10,11 +18,14 @@ from app.config.constants import (
     ConsultationStatus,
     Role,
 )
-from app.config.database import get_db
+from app.config.database import SessionLocal, get_db
 from app.config.dependencies import has_permission
 from app.config.response import ApiResponse
+from app.config.security import decode_token
 from app.config.settings import settings
 from app.module.appointment.model import Appointment
+from app.module.auth.model import User
+from app.module.OnlineConsultation.connection import room_manager
 from app.module.OnlineConsultation.model import ChatMessage, ConsultationRoom
 
 
@@ -350,3 +361,248 @@ def get_messages(
         message="Chat history fetched successfully",
         data=data,
     )
+
+
+# ============================================================
+# SIGNALING WEBSOCKET
+# ============================================================
+#
+# Path:  /consultations/ws/{room_code}?token=<access_token>
+#
+# The browser can't send Authorization headers on a WebSocket, so the
+# JWT is passed as a query param and validated manually. The server only
+# relays JSON (offer/answer/ice-candidate/chat/presence) between the two
+# peers; audio/video never flows through here.
+# ============================================================
+
+# WebSocket close codes (application range 4000-4999).
+_WS_UNAUTHORIZED = 4401
+_WS_FORBIDDEN = 4403
+_WS_ROOM_NOT_FOUND = 4404
+_WS_ROOM_FULL = 4409
+_WS_REPLACED = 4000
+
+# Message types relayed verbatim to the other peer.
+_RELAY_TYPES = {"offer", "answer", "ice-candidate", "ready", "hangup"}
+
+
+def _authenticate_ws(token: str | None, room_code: str) -> dict | None:
+    """
+    Validate the token and room membership for a WebSocket connection.
+
+    Returns:
+      - None                     -> bad/expired token (unauthorized)
+      - {"error": "..."}         -> room missing or user not a participant
+      - {"user_id","role",...}   -> authenticated participant
+    """
+
+    if not token:
+        return None
+
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        return None
+
+    username = payload.get("sub")
+    if not username:
+        return None
+
+    db = SessionLocal()
+    try:
+        user = (
+            db.query(User)
+            .filter(User.username == username)
+            .first()
+        )
+        if not user or not user.is_active:
+            return None
+
+        room = _load_room(db, room_code)
+        if not room:
+            return {"error": "room_not_found"}
+
+        participants = _participant_user_ids(room.appointment)
+        role = user.role.value
+
+        allowed = (
+            role == Role.ADMIN.value
+            or (
+                role == Role.DOCTOR.value
+                and user.id == participants["doctor"]
+            )
+            or (
+                role == Role.PATIENT.value
+                and user.id == participants["patient"]
+            )
+        )
+        if not allowed:
+            return {"error": "forbidden"}
+
+        return {
+            "user_id": user.id,
+            "role": role,
+            "room_id": room.id,
+        }
+    finally:
+        db.close()
+
+
+def _mark_room_active(room_id: int) -> None:
+    db = SessionLocal()
+    try:
+        room = (
+            db.query(ConsultationRoom)
+            .filter(ConsultationRoom.id == room_id)
+            .first()
+        )
+        if room and room.status != ConsultationStatus.ACTIVE:
+            room.status = ConsultationStatus.ACTIVE
+            if room.started_at is None:
+                room.started_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
+
+
+def _mark_room_ended(room_id: int) -> None:
+    db = SessionLocal()
+    try:
+        room = (
+            db.query(ConsultationRoom)
+            .filter(ConsultationRoom.id == room_id)
+            .first()
+        )
+        if room and room.status != ConsultationStatus.ENDED:
+            room.status = ConsultationStatus.ENDED
+            room.ended_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
+
+
+def _persist_chat(room_id: int, sender_user_id: int, text: str) -> str:
+    db = SessionLocal()
+    try:
+        message = ChatMessage(
+            room_id=room_id,
+            sender_user_id=sender_user_id,
+            message=text,
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        return (
+            message.created_at.isoformat()
+            if message.created_at
+            else datetime.utcnow().isoformat()
+        )
+    finally:
+        db.close()
+
+
+@router.websocket("/ws/{room_code}")
+async def consultation_ws(websocket: WebSocket, room_code: str):
+    token = websocket.query_params.get("token")
+    auth = _authenticate_ws(token, room_code)
+
+    if auth is None:
+        await websocket.close(code=_WS_UNAUTHORIZED)
+        return
+    if auth.get("error") == "room_not_found":
+        await websocket.close(code=_WS_ROOM_NOT_FOUND)
+        return
+    if auth.get("error") == "forbidden":
+        await websocket.close(code=_WS_FORBIDDEN)
+        return
+
+    user_id = auth["user_id"]
+    room_id = auth["room_id"]
+
+    if not await room_manager.can_join(room_code, user_id):
+        await websocket.close(code=_WS_ROOM_FULL)
+        return
+
+    await websocket.accept()
+
+    # Replace any stale socket for the same user (e.g. a duplicate tab).
+    previous = await room_manager.connect(room_code, user_id, websocket)
+    if previous is not None:
+        try:
+            await previous.close(code=_WS_REPLACED)
+        except Exception:
+            pass
+
+    _mark_room_active(room_id)
+
+    # Tell the newcomer who is already present. The side that finds an
+    # existing peer becomes the WebRTC offer initiator.
+    existing_peers = [
+        pid for pid in room_manager.peer_ids(room_code) if pid != user_id
+    ]
+    await websocket.send_json(
+        {
+            "type": "joined",
+            "self_id": user_id,
+            "peers": existing_peers,
+            "initiator": len(existing_peers) > 0,
+        }
+    )
+
+    # Notify the other side that someone joined.
+    await room_manager.send_to_peers(
+        room_code,
+        user_id,
+        {"type": "peer-joined", "user_id": user_id},
+    )
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+
+            try:
+                data = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+
+            if not isinstance(data, dict):
+                continue
+
+            msg_type = data.get("type")
+
+            if msg_type in _RELAY_TYPES:
+                await room_manager.send_to_peers(
+                    room_code,
+                    user_id,
+                    {**data, "from": user_id},
+                )
+
+            elif msg_type == "chat":
+                text = (data.get("message") or "").strip()
+                if not text:
+                    continue
+                created_at = _persist_chat(room_id, user_id, text)
+                await room_manager.send_to_peers(
+                    room_code,
+                    user_id,
+                    {
+                        "type": "chat",
+                        "sender_user_id": user_id,
+                        "message": text,
+                        "created_at": created_at,
+                    },
+                )
+            # Unknown message types are ignored.
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        await room_manager.disconnect(room_code, user_id)
+        await room_manager.send_to_peers(
+            room_code,
+            user_id,
+            {"type": "peer-left", "user_id": user_id},
+        )
+        if room_manager.is_empty(room_code):
+            _mark_room_ended(room_id)
