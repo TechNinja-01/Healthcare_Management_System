@@ -55,6 +55,14 @@ def _serialize_appointment(appointment: Appointment) -> dict:
         else status
     )
 
+    # Appointment type
+    appointment_type = appointment.appointment_type
+    appointment_type_value = (
+        appointment_type.value
+        if hasattr(appointment_type, "value")
+        else appointment_type
+    )
+
     # Created at
     created_at = appointment.created_at
 
@@ -88,6 +96,7 @@ def _serialize_appointment(appointment: Appointment) -> dict:
         appointment_time=appointment.appointment_time,
         disease=disease,
         status=status_value,
+        appointment_type=appointment_type_value,
         created_at=str(created_at),
         patient_name=patient_name,
         doctor_name=doctor_name,
@@ -371,6 +380,8 @@ def create_appointment(
 
             # IMPORTANT
             disease=disease,
+
+            appointment_type=payload.appointment_type,
 
             status=AppointmentStatus.PENDING_PAYMENT,
 

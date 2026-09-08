@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.config.constants import AppointmentStatus
+from app.config.constants import AppointmentStatus, AppointmentType
 
 
 class AppointmentCreate(BaseModel):
@@ -18,6 +18,7 @@ class AppointmentCreate(BaseModel):
         default=None,
         max_length=255,
     )
+    appointment_type: AppointmentType = AppointmentType.IN_PERSON
     status: AppointmentStatus = AppointmentStatus.PENDING
 
     @field_validator("appointment_date")
@@ -60,6 +61,7 @@ class AppointmentResponse(BaseModel):
     appointment_date: date
     appointment_time: time
     status: str
+    appointment_type: str = AppointmentType.IN_PERSON.value
     disease: str | None = None
     created_at: str
     patient_name: Optional[str] = None

@@ -12,6 +12,10 @@ from app.module.patient.model import Patient  # noqa: F401
 from app.module.appointment.model import Appointment  # noqa: F401
 from app.module.Availability.model import DoctorAvailability, DoctorLeave  # noqa: F401
 from app.module.payment.model import Payment  # noqa: F401
+from app.module.OnlineConsultation.model import (  # noqa: F401
+    ChatMessage,
+    ConsultationRoom,
+)
 
 app = FastAPI(
     title="Healthcare Management API",

@@ -12,7 +12,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from app.config.constants import AppointmentStatus
+from app.config.constants import AppointmentStatus, AppointmentType
 from app.config.database import Base
 
 
@@ -36,6 +36,18 @@ class Appointment(Base):
     appointment_date = Column(Date, nullable=False)
     appointment_time = Column(Time, nullable=False)
     disease = Column(String(255), nullable=True)
+    appointment_type = Column(
+        Enum(
+            AppointmentType,
+            name="appointment_type",
+            values_callable=lambda enum: [item.value for item in enum],
+            native_enum=False,
+            length=20,
+        ),
+        nullable=False,
+        default=AppointmentType.IN_PERSON,
+        server_default=AppointmentType.IN_PERSON.value,
+    )
     status = Column(
         Enum(
             AppointmentStatus,
@@ -60,6 +72,12 @@ class Appointment(Base):
         "Payment",
         back_populates="appointment",
         uselist=False,
+    )
+    consultation = relationship(
+        "ConsultationRoom",
+        back_populates="appointment",
+        uselist=False,
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (

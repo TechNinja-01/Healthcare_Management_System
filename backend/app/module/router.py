@@ -11,6 +11,7 @@ from app.module.user.router import router as user_router
 from app.module.payment.router import router as payment_router
 from app.module.appointment.router import router as appointment_router
 from app.module.Availability.router import router as availability_router
+from app.module.OnlineConsultation.router import router as consultation_router
 
 
 router = APIRouter()
@@ -26,3 +27,4 @@ router.include_router(user_router)
 router.include_router(payment_router)
 router.include_router(appointment_router)
 router.include_router(availability_router)
+router.include_router(consultation_router)

@@ -41,6 +41,17 @@ class AppointmentStatus(str, Enum):
     NO_SHOW = "no_show"
 
 
+class AppointmentType(str, Enum):
+    IN_PERSON = "in_person"
+    ONLINE = "online"
+
+
+class ConsultationStatus(str, Enum):
+    SCHEDULED = "scheduled"
+    ACTIVE = "active"
+    ENDED = "ended"
+
+
 class PaymentStatus(str, Enum):
     CREATED = "created"
     PENDING = "pending"
@@ -73,6 +84,8 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
         "availability.delete",
         "payment.read",
         "payment.create",
+        "consultation.read",
+        "consultation.join",
     ],
     Role.DOCTOR: [
         "doctor.read",
@@ -86,6 +99,8 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
         "availability.create",
         "availability.update",
         "availability.delete",
+        "consultation.read",
+        "consultation.join",
     ],
     Role.PATIENT: [
         "patient.read",
@@ -97,5 +112,7 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
         "availability.read",
         "payment.create",
         "payment.read",
+        "consultation.read",
+        "consultation.join",
     ],
 }

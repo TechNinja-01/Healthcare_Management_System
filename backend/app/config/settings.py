@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_SECRET:str
     # RAZORPAY_WEBHOOK_SECRET: str
 
+    # WebRTC ICE (STUN is free/public; TURN is optional but recommended).
+    STUN_URL: str = "stun:stun.l.google.com:19302"
+    TURN_URL: str | None = None
+    TURN_USERNAME: str | None = None
+    TURN_CREDENTIAL: str | None = None
+
 
     model_config = SettingsConfigDict(
         env_file=".env",
