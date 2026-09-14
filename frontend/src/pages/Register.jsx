@@ -15,12 +15,16 @@ const initialForm = {
   email: "",
   password: "",
   role: "patient",
+
   admin_id: "",
   name: "",
   phone: "",
   designation: "",
+
   doctor_id: "",
   specialization: "",
+  hospital_name: "",   // ADD THIS
+
   patient_id: "",
   first_name: "",
   last_name: "",
@@ -31,7 +35,6 @@ const initialForm = {
   disease: "",
   assigned_doctor_id: "",
 };
-
 export default function Register() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState(initialForm);
@@ -69,19 +72,25 @@ export default function Register() {
           name: formData.name,
           phone: formData.phone,
           designation: formData.designation,
-          latitude: coordinates.latitude,
-          longitude: coordinates.longitude
+          // latitude: coordinates.latitude,
+          // longitude: coordinates.longitude
         });
       } else if (formData.role === "doctor") {
-        response = await registerDoctor({
-          id: formData.id,
+        const doctorData = {
           username: formData.username,
           email: formData.email,
           password: formData.password,
-          doctor_id: formData.doctor_id,
           name: formData.name,
           specialization: formData.specialization,
-        });
+          hospital_name: formData.hospital_name,
+          address: formData.address,
+        };
+
+        console.log("========== DOCTOR DATA ==========");
+        console.log(doctorData);
+        console.log("=================================");
+
+        response = await registerDoctor(doctorData);
       } else {
         response = await registerPatient({
           id: formData.id,
@@ -214,15 +223,6 @@ export default function Register() {
 
           {formData.role === "doctor" && (
             <>
-              {/* <input
-                type="text"
-                name="doctor_id"
-                placeholder="Doctor ID"
-                value={formData.doctor_id}
-                onChange={handleChange}
-                className="w-full border rounded-lg p-3"
-                required
-              /> */}
               <input
                 type="text"
                 name="name"
@@ -232,11 +232,32 @@ export default function Register() {
                 className="w-full border rounded-lg p-3"
                 required
               />
+
               <input
                 type="text"
                 name="specialization"
                 placeholder="Specialization"
                 value={formData.specialization}
+                onChange={handleChange}
+                className="w-full border rounded-lg p-3"
+                required
+              />
+
+              <input
+                type="text"
+                name="hospital_name"
+                placeholder="Hospital name"
+                value={formData.hospital_name}
+                onChange={handleChange}
+                className="w-full border rounded-lg p-3"
+                required
+              />
+
+              <input
+                type="text"
+                name="address"
+                placeholder="Hospital address"
+                value={formData.address}
                 onChange={handleChange}
                 className="w-full border rounded-lg p-3"
                 required

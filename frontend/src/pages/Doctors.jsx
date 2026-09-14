@@ -495,9 +495,9 @@ export default function Doctors() {
         address:
           createForm.address,
 
-        latitude,
+        // latitude,
 
-        longitude,
+        // longitude,
 
       };
 
