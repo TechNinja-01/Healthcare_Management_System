@@ -5,6 +5,10 @@ import { getAppointments } from "../api/appointmentApi";
 import { createOrGetRoom } from "../api/consultationApi";
 import { getApiData, getErrorMessage } from "../utils/apiHelpers";
 
+// Consultation length and how early the call may be joined.
+const SLOT_DURATION_MINUTES = 30;
+const EARLY_JOIN_MINUTES = 5;
+
 export default function DoctorAppointments() {
     const navigate = useNavigate();
 
@@ -12,6 +16,9 @@ export default function DoctorAppointments() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [joiningId, setJoiningId] = useState(null);
+
+    // Live clock so the Join button enables/disables on its own.
+    const [now, setNow] = useState(() => new Date());
 
     const fetchAppointments = async () => {
         try {
@@ -47,6 +54,12 @@ export default function DoctorAppointments() {
         fetchAppointments();
     }, []);
 
+    // Re-evaluate the join window every 30s.
+    useEffect(() => {
+        const id = setInterval(() => setNow(new Date()), 30000);
+        return () => clearInterval(id);
+    }, []);
+
     // Join an online consultation: create/fetch the room, then navigate.
     const handleJoinCall = async (appointment) => {
         try {
@@ -73,10 +86,89 @@ export default function DoctorAppointments() {
         }
     };
 
-    // Whether a "Join Call" action should be shown for this appointment.
-    const canJoinCall = (appointment) =>
-        appointment.appointment_type === "online" &&
-        appointment.status === "confirmed";
+    // Compute the joinable window for an appointment's slot.
+    const getCallWindow = (appointment) => {
+        if (
+            !appointment.appointment_date ||
+            !appointment.appointment_time
+        ) {
+            return null;
+        }
+
+        const start = new Date(
+            `${appointment.appointment_date}T${appointment.appointment_time}`
+        );
+
+        if (Number.isNaN(start.getTime())) {
+            return null;
+        }
+
+        const joinFrom = new Date(
+            start.getTime() - EARLY_JOIN_MINUTES * 60000
+        );
+        const joinUntil = new Date(
+            start.getTime() + SLOT_DURATION_MINUTES * 60000
+        );
+
+        return { start, joinFrom, joinUntil };
+    };
+
+    // State of the call action: none | early | active | expired.
+    const getCallState = (appointment) => {
+        if (
+            appointment.appointment_type !== "online" ||
+            appointment.status !== "confirmed"
+        ) {
+            return "none";
+        }
+
+        const win = getCallWindow(appointment);
+        if (!win) return "none";
+
+        if (now < win.joinFrom) return "early";
+        if (now > win.joinUntil) return "expired";
+        return "active";
+    };
+
+    // Render the Join action / disabled state for an appointment.
+    const renderCallAction = (appointment) => {
+        const state = getCallState(appointment);
+
+        if (state === "none") {
+            return <span className="text-sm text-gray-400">—</span>;
+        }
+
+        if (state === "active") {
+            return (
+                <button
+                    onClick={() => handleJoinCall(appointment)}
+                    disabled={joiningId === appointment.id}
+                    className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                >
+                    {joiningId === appointment.id
+                        ? "Joining…"
+                        : "Join Call"}
+                </button>
+            );
+        }
+
+        if (state === "early") {
+            return (
+                <button
+                    disabled
+                    title="The call opens at the scheduled time"
+                    className="cursor-not-allowed rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-500"
+                >
+                    Starts {formatTime(appointment.appointment_time)}
+                </button>
+            );
+        }
+
+        // expired
+        return (
+            <span className="text-sm text-gray-400">Call ended</span>
+        );
+    };
 
     // Format date
     const formatDate = (dateString) => {
@@ -313,30 +405,8 @@ export default function DoctorAppointments() {
 
                                             {/* Action */}
                                             <td className="px-6 py-4">
-                                                {canJoinCall(
+                                                {renderCallAction(
                                                     appointment
-                                                ) ? (
-                                                    <button
-                                                        onClick={() =>
-                                                            handleJoinCall(
-                                                                appointment
-                                                            )
-                                                        }
-                                                        disabled={
-                                                            joiningId ===
-                                                            appointment.id
-                                                        }
-                                                        className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                                                    >
-                                                        {joiningId ===
-                                                        appointment.id
-                                                            ? "Joining…"
-                                                            : "Join Call"}
-                                                    </button>
-                                                ) : (
-                                                    <span className="text-sm text-gray-400">
-                                                        —
-                                                    </span>
                                                 )}
                                             </td>
 
@@ -457,26 +527,8 @@ export default function DoctorAppointments() {
                                                 : "In-person"}
                                         </span>
 
-                                        {canJoinCall(
+                                        {renderCallAction(
                                             appointment
-                                        ) && (
-                                            <button
-                                                onClick={() =>
-                                                    handleJoinCall(
-                                                        appointment
-                                                    )
-                                                }
-                                                disabled={
-                                                    joiningId ===
-                                                    appointment.id
-                                                }
-                                                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                                            >
-                                                {joiningId ===
-                                                appointment.id
-                                                    ? "Joining…"
-                                                    : "Join Call"}
-                                            </button>
                                         )}
                                     </div>
 
