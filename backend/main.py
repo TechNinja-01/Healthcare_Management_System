@@ -17,6 +17,10 @@ from app.module.OnlineConsultation.model import (  # noqa: F401
     ConsultationRoom,
     Recording,
 )
+from app.module.role.model import Role  # noqa: F401
+from app.module.Permission.model import Permission  # noqa: F401
+from app.module.rolePermission.model import RolePermission  # noqa: F401
+from app.module.user_permission.model import UserPermission  # noqa: F401
 
 app = FastAPI(
     title="Healthcare Management API",
