@@ -37,16 +37,34 @@ class RegisterAdmin(BaseModel):
 
 
 class RegisterDoctor(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
-    email: EmailStr
-    password: str = Field(..., min_length=6, max_length=128)
-    name: str = Field(..., min_length=1, max_length=100)
-    specialization: str = Field(..., min_length=1, max_length=100)
-    hospital_name: str = Field(..., min_length=1, max_length=100)
-    address: str = Field(..., min_length=1, max_length=300)
-    latitude: float
-    longitude: float
+    username: str
+    email: str
+    password: str
 
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+    )
+
+    specialization: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+    )
+
+    hospital_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+    )
+
+    address: str = Field(
+        ...,
+        min_length=1,
+        max_length=300,
+    )
+       
 
 class RegisterPatient(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)

@@ -30,6 +30,8 @@ from app.module.auth.schema import (
 from app.module.doctor.model import Doctor
 from app.module.patient.model import Patient
 
+from app.utills.geocoding import get_coordinates
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
@@ -118,9 +120,9 @@ def register_admin(payload: RegisterAdmin, db: Session = Depends(get_db)):
 
 
 @router.post("/register/doctor")
-def register_doctor(
+async def register_doctor(
     payload: RegisterDoctor,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     try:
         print("================================")
@@ -128,9 +130,10 @@ def register_doctor(
         print(payload.model_dump())
         print("================================")
 
-        # -----------------------------
+        # -----------------------------------
         # CREATE USER
-        # -----------------------------
+        # -----------------------------------
+
         user = _create_user(
             db,
             username=payload.username,
@@ -141,16 +144,44 @@ def register_doctor(
 
         print("USER CREATED:", user.id)
 
-        # -----------------------------
+        # -----------------------------------
+        # GET LATITUDE + LONGITUDE
+        # FROM ADDRESS
+        # -----------------------------------
+
+        coordinates = await get_coordinates(
+            payload.address
+        )
+
+        if not coordinates:
+            db.rollback()
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Unable to find coordinates "
+                    "for the provided address"
+                ),
+            )
+
+        latitude = coordinates["lat"]
+        longitude = coordinates["lon"]
+
+        print("LATITUDE:", latitude)
+        print("LONGITUDE:", longitude)
+
+        # -----------------------------------
         # GENERATE DOCTOR ID
-        # -----------------------------
+        # -----------------------------------
+
         doctor_id = generate_doctor_id(db)
 
         print("GENERATED DOCTOR ID:", doctor_id)
 
-        # -----------------------------
+        # -----------------------------------
         # CREATE DOCTOR
-        # -----------------------------
+        # -----------------------------------
+
         doctor = Doctor(
             id=doctor_id,
             name=payload.name,
@@ -158,17 +189,18 @@ def register_doctor(
             user_id=user.id,
             hospital_name=payload.hospital_name,
             address=payload.address,
-            latitude=payload.latitude,
-            longitude=payload.longitude,
+            latitude=latitude,
+            longitude=longitude,
         )
 
         db.add(doctor)
 
         print("DOCTOR OBJECT ADDED")
 
-        # -----------------------------
+        # -----------------------------------
         # COMMIT
-        # -----------------------------
+        # -----------------------------------
+
         db.commit()
 
         db.refresh(user)
@@ -184,7 +216,10 @@ def register_doctor(
                     email=user.email,
                     role=user.role.value,
                 ).model_dump(),
+
                 "doctor_id": doctor.id,
+                "latitude": doctor.latitude,
+                "longitude": doctor.longitude,
             },
         )
 
@@ -218,7 +253,7 @@ def register_doctor(
             status_code=500,
             detail=str(exc),
         )
-
+    
 @router.post("/register/patient")
 def register_patient(payload: RegisterPatient, db: Session = Depends(get_db)):
     try:
