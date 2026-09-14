@@ -1,0 +1,21 @@
+{
+	# Email used for Let's Encrypt registration.
+	email {$ACME_EMAIL}
+}
+
+# Your public domain, e.g. myapp.duckdns.org (set via DOMAIN env var).
+{$DOMAIN} {
+	# API + WebSocket: strip the /api prefix and forward to FastAPI.
+	# e.g. https://DOMAIN/api/consultations/ws/... -> backend /consultations/ws/...
+	# Caddy upgrades WebSocket connections automatically.
+	handle_path /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else: the React single-page app.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
