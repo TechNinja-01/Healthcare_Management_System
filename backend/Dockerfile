@@ -7,8 +7,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 # Install dependencies first (better layer caching).
+# Not using --frozen: uv.lock predates the boto3 dependency, so we let uv
+# re-resolve and update the lock at build time to include it.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev
 
 # App code.
 COPY . .
