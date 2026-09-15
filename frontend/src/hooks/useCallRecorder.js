@@ -89,6 +89,9 @@ export default function useCallRecorder(roomCode, localStream, remoteStream) {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     const audioCtx = new AudioCtx();
     audioCtxRef.current = audioCtx;
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {});
+    }
     const dest = audioCtx.createMediaStreamDestination();
 
     [localStream, remoteStream].forEach((stream) => {
@@ -194,6 +197,14 @@ export default function useCallRecorder(roomCode, localStream, remoteStream) {
         return;
       }
 
+      // Build the composite BEFORE any await: the AudioContext must be
+      // created while the click's user activation is still fresh, or
+      // Chrome leaves it "suspended" and the recording audio is silent.
+      const composite = buildCompositeStream();
+      if (audioCtxRef.current?.state === "suspended") {
+        await audioCtxRef.current.resume().catch(() => {});
+      }
+
       const res = await initiateRecording(roomCode);
       const data = getApiData(res);
       if (!data?.recording_id) {
@@ -208,8 +219,6 @@ export default function useCallRecorder(roomCode, localStream, remoteStream) {
       totalSizeRef.current = 0;
       uploadChainRef.current = Promise.resolve();
       startTimeRef.current = Date.now();
-
-      const composite = buildCompositeStream();
       const mimeType = MediaRecorder.isTypeSupported(
         "video/webm;codecs=vp8,opus"
       )
