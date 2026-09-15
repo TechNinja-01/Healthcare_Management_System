@@ -142,7 +142,8 @@ class Recording(Base):
     object_key = Column(String(255), nullable=False)
 
     # In-progress S3 multipart upload id (cleared once completed).
-    upload_id = Column(String(255), nullable=True)
+    # Text, not String(255): Cloudflare R2 upload ids are ~300 chars.
+    upload_id = Column(Text, nullable=True)
 
     size_bytes = Column(Integer, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
