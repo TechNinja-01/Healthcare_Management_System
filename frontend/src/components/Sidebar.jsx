@@ -32,6 +32,18 @@ const NAV_ITEMS = [
     permission: "doctor.read",
   },
   {
+    name: "My Appointments",
+    path: "/appointments",
+    roles: ["patient"],
+    permission: "appointment.read",
+  },
+  {
+    name: "Recordings",
+    path: "/recordings",
+    roles: ["doctor", "patient"],
+    permission: "consultation.recording.read",
+  },
+  {
     name: "My Availability",
     path: "/availability",
     roles: ["doctor"],

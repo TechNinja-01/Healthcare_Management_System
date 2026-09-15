@@ -28,6 +28,8 @@ from app.config.security import decode_token
 from app.config.settings import settings
 from app.module.appointment.model import Appointment
 from app.module.auth.model import User
+from app.module.doctor.model import Doctor
+from app.module.patient.model import Patient
 from app.module.OnlineConsultation.connection import room_manager
 from app.module.OnlineConsultation.model import (
     ChatMessage,
@@ -296,6 +298,91 @@ def get_ice_servers(
     return ApiResponse.success(
         message="ICE servers fetched successfully",
         data={"ice_servers": ice_servers},
+    )
+
+
+# ============================================================
+# INCOMING CALLS (patient polls this to see a "ringing" doctor)
+# ============================================================
+
+@router.get("/calls/incoming")
+def get_incoming_calls(
+    db: Session = Depends(get_db),
+    current_user=Depends(has_permission("consultation.join")),
+):
+    """
+    Rooms where the doctor is currently connected and waiting, for the
+    calling patient. The frontend polls this to show a "pick up" prompt.
+    """
+
+    if current_user.get("role") != Role.PATIENT.value:
+        return ApiResponse.success(
+            message="Incoming calls fetched successfully",
+            data=[],
+        )
+
+    active = room_manager.snapshot()
+    if not active:
+        return ApiResponse.success(
+            message="Incoming calls fetched successfully",
+            data=[],
+        )
+
+    rooms = (
+        db.query(ConsultationRoom)
+        .options(
+            joinedload(ConsultationRoom.appointment)
+            .joinedload(Appointment.patient),
+            joinedload(ConsultationRoom.appointment)
+            .joinedload(Appointment.doctor),
+        )
+        .filter(ConsultationRoom.room_code.in_(list(active.keys())))
+        .all()
+    )
+
+    user_id = current_user.get("id")
+    calls = []
+
+    for room in rooms:
+        appointment = room.appointment
+        if not appointment:
+            continue
+
+        participants = _participant_user_ids(appointment)
+        present = active.get(room.room_code, [])
+
+        # Ringing = it's my appointment, the doctor is in the room,
+        # and I haven't joined yet.
+        if (
+            participants["patient"] == user_id
+            and participants["doctor"] in present
+            and user_id not in present
+        ):
+            calls.append(
+                {
+                    "room_code": room.room_code,
+                    "appointment_id": appointment.id,
+                    "doctor_name": (
+                        appointment.doctor.name
+                        if appointment.doctor
+                        else None
+                    ),
+                    "appointment_date": (
+                        appointment.appointment_date.isoformat()
+                        if appointment.appointment_date
+                        else None
+                    ),
+                    "appointment_time": (
+                        appointment.appointment_time.isoformat()
+                        if appointment.appointment_time
+                        else None
+                    ),
+                }
+            )
+
+    return ApiResponse.success(
+        message="Incoming calls fetched successfully",
+        data=calls,
     )
 
 
@@ -622,6 +709,89 @@ def list_recordings(
     return ApiResponse.success(
         message="Recordings fetched successfully",
         data=[_serialize_recording(r) for r in recordings],
+    )
+
+
+@router.get("/recordings/mine")
+def list_my_recordings(
+    db: Session = Depends(get_db),
+    current_user=Depends(has_permission("consultation.recording.read")),
+):
+    """
+    All completed recordings across every consultation the current
+    user took part in, with appointment context for display.
+    """
+
+    role = current_user.get("role")
+    user_id = current_user.get("id")
+
+    query = (
+        db.query(Recording)
+        .join(ConsultationRoom, Recording.room_id == ConsultationRoom.id)
+        .join(Appointment, ConsultationRoom.appointment_id == Appointment.id)
+        .options(
+            joinedload(Recording.room)
+            .joinedload(ConsultationRoom.appointment)
+            .joinedload(Appointment.patient),
+            joinedload(Recording.room)
+            .joinedload(ConsultationRoom.appointment)
+            .joinedload(Appointment.doctor),
+        )
+        .filter(Recording.status == RecordingStatus.COMPLETED)
+    )
+
+    if role == Role.DOCTOR.value:
+        query = query.join(
+            Doctor, Appointment.doctor_id == Doctor.id
+        ).filter(Doctor.user_id == user_id)
+    elif role == Role.PATIENT.value:
+        query = query.join(
+            Patient, Appointment.patient_id == Patient.id
+        ).filter(Patient.user_id == user_id)
+    elif role != Role.ADMIN.value:
+        return ApiResponse.success(
+            message="Recordings fetched successfully",
+            data=[],
+        )
+
+    recordings = query.order_by(Recording.created_at.desc()).all()
+
+    data = []
+    for recording in recordings:
+        room = recording.room
+        appointment = room.appointment if room else None
+        patient = appointment.patient if appointment else None
+        doctor = appointment.doctor if appointment else None
+
+        data.append(
+            {
+                **_serialize_recording(recording),
+                "room_code": room.room_code if room else None,
+                "appointment_id": (
+                    appointment.id if appointment else None
+                ),
+                "appointment_date": (
+                    appointment.appointment_date.isoformat()
+                    if appointment and appointment.appointment_date
+                    else None
+                ),
+                "appointment_time": (
+                    appointment.appointment_time.isoformat()
+                    if appointment and appointment.appointment_time
+                    else None
+                ),
+                "doctor_name": doctor.name if doctor else None,
+                "patient_name": (
+                    f"{patient.first_name} {patient.last_name}".strip()
+                    if patient
+                    else None
+                ),
+            }
+        )
+
+    return ApiResponse.success(
+        message="Recordings fetched successfully",
+        data=data,
     )
 
 

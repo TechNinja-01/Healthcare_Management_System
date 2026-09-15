@@ -27,6 +27,14 @@ class RoomManager:
     def peer_ids(self, room_code: str) -> list[int]:
         return list(self._rooms.get(room_code, {}).keys())
 
+    def snapshot(self) -> dict[str, list[int]]:
+        """Connected user ids per room, for incoming-call polling."""
+        return {
+            room_code: list(peers.keys())
+            for room_code, peers in self._rooms.items()
+            if peers
+        }
+
     def is_empty(self, room_code: str) -> bool:
         return not self._rooms.get(room_code)
 

@@ -25,6 +25,10 @@ export const getRoomMessages = (roomCode) =>
 export const getIceServers = () =>
   apiClient.get(`/consultations/ice-servers`);
 
+// Rooms where the doctor is connected and waiting for this patient.
+export const getIncomingCalls = () =>
+  apiClient.get(`/consultations/calls/incoming`);
+
 // ------------------------------------------------------------
 // Recording
 // ------------------------------------------------------------
@@ -52,6 +56,10 @@ export const abortRecording = (roomCode, recordingId) =>
 
 export const listRecordings = (roomCode) =>
   apiClient.get(`/consultations/${roomCode}/recordings`);
+
+// Every completed recording across the current user's consultations.
+export const getMyRecordings = () =>
+  apiClient.get(`/consultations/recordings/mine`);
 
 export const getRecordingDownloadUrl = (recordingId) =>
   apiClient.get(`/consultations/recordings/${recordingId}/download`);

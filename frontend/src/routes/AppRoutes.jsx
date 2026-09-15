@@ -17,18 +17,23 @@ import Profile from "../pages/Profile";
 import Register from "../pages/Register";
 import Roles from "../pages/Roles/Roles";
 import UserPermissions from "../pages/UserPermissions/UserPermission";
-import DoctorAppointments from "../pages/DoctorAppointment";
 import DoctorAvailability from "../pages/DoctorAvailability"
  
 import PatientDoctors from "../pages/PatientDoctors";
 import DoctorDetails from "../pages/DoctorDetails";
 import Consultation from "../pages/Consultation";
+import Appointments from "../pages/Appointments";
+import Recordings from "../pages/Recordings";
+import IncomingCallModal from "../components/IncomingCallModal";
 
 
 
 export default function AppRoutes() {
   return (
     <BrowserRouter>
+
+      {/* Global "doctor is calling" watcher for logged-in patients. */}
+      <IncomingCallModal />
 
       <Routes>
 
@@ -158,7 +163,24 @@ export default function AppRoutes() {
 
         <Route
           path="/appointments"
-          element={<DoctorAppointments />}
+          element={
+            <ProtectedRoute
+              allowedRoles={["doctor", "patient", "admin"]}
+            >
+              <Appointments />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/recordings"
+          element={
+            <ProtectedRoute
+              allowedRoles={["doctor", "patient", "admin"]}
+            >
+              <Recordings />
+            </ProtectedRoute>
+          }
         />
 
         <Route

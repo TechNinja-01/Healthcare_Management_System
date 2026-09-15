@@ -124,5 +124,6 @@ ROLE_PERMISSIONS: dict[Role, list[str]] = {
         "payment.read",
         "consultation.read",
         "consultation.join",
+        "consultation.recording.read",
     ],
 }
